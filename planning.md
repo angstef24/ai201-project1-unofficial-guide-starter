@@ -20,16 +20,16 @@
 
 | # | Source | Description | URL or location |
 |---|--------|-------------|-----------------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
-| 4 | | | |
-| 5 | | | |
-| 6 | | | |
-| 7 | | | |
-| 8 | | | |
-| 9 | | | |
-| 10 | | | |
+| 1 |Gatech Website|Guide to Off Campus Housing|https://postdocs.gatech.edu/news/prospective-campus-dwellers-guide-nearby-neighborhoods|
+| 2 |Reddit|Discussion on Off Campus Housing|https://www.reddit.com/r/gatech/comments/1k55yq7/what_are_some_good_offcampus_housing_options_for/|
+| 3 |My Campus Passport|Neighborhoods Around Gatech|https://mycampussupport.gatech.edu/hc/en-us/articles/32070965705741-Neighborhoods-Around-Campus|
+| 4 |Rambler|Where Students Live|https://rambleratlanta.com/resources/where-georgia-tech-students-live/|
+| 5 |Gatech Website|On campus housing options|https://housing.gatech.edu/explore-housing/on-campus-housing|
+| 6 |Reddit|Where should I live on campus|https://www.reddit.com/r/gatech/comments/1rompce/which_side_of_the_campus_should_i_live_in/|
+| 7 |Rambler|Freshmen guide to housing|https://rambleratlanta.com/resources/freshman-guide-housing-georgia-tech/|
+| 8 |International Education Website|On and Off campus housing blog|https://isss.oie.gatech.edu/content/housing-campus-and-around-gt|
+| 9 |Reddit|Off campus discussion|https://www.reddit.com/r/gatech/comments/1lczd0n/safe_and_decently_priced_offcampus_housing/|
+| 10 |Platuni|Third party blog on off campus information|https://www.platuni.com/enterprise-resources/blog-and-insights/off-campus-housing-at-georgia-tech|
 
 ---
 
