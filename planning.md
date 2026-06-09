@@ -41,9 +41,9 @@ I chose my domain of Georgia Tech housing options. There are so many websites ou
      numbers fit the structure of your documents.
      A review-heavy corpus warrants different chunking than a long FAQ. -->
 
-Chunk size: For long blog websites, lets chunk by 500 tokens in order to split up the content. For reddit pages, I want each chunk to be each comment left on the page.
+Chunk size: For long blog websites, lets chunk by 100 tokens in order to split up the content. For reddit pages, I want each chunk to be each comment left on the page. This was originally 500 tokens, but that produced chunks that were much too large for what I needed. I also had the chunks adjusted to include full sentences. This made it so that not all chunks are size 100 now, but it did lead to more favorable outcomes in the retrieval stage.
 
-Overlap: No overlap needed for reddit posts, but for blog posts lets add a 52 token overlap.
+Overlap: No overlap needed for reddit posts, but for blog posts lets add a 52 token overlap. Changing 52 to 15 since I am shrinking the total chunk size as well.
 
 Reasoning: Overlap matters more for the blog post websitw where we are splitting based on a fixed number of tokens. On reddit, each comment is its own complete thought anyways, so adding an overlap will not serve a purpose. However, it is important to split these types up since the same chunking strategy would not be successful for both.
 
@@ -104,15 +104,14 @@ If the top retrieved chunks all have low similarity scores, we should surface th
      You'll use this diagram as context when prompting AI tools to implement each stage. -->
 +---------------------------+
 |    Document Ingestion     |
-|  BeautifulSoup / PRAW     |
+|  BeautifulSoup            |
 |  GT blogs + Reddit        |
 +---------------------------+
              |
              v
 +---------------------------+
 |         Chunking          |
-|  LangChain                |
-|  500 tokens, 50 overlap   |
+| 100 tokens, 52 overlap   |
 |  Full comments            |
 +---------------------------+
              |
@@ -127,13 +126,13 @@ If the top retrieved chunks all have low similarity scores, we should surface th
 +---------------------------+
 |         Retrieval         |
 |  ChromaDB cosine search   |
-|  k=5-8 chunks             |
+|  k=4-8 chunks             |
 +---------------------------+
              |
              v
 +---------------------------+
 |        Generation         |
-|  GPT-4o                   |
+|                           |
 |  returns cited answer     |
 +---------------------------+
 ---

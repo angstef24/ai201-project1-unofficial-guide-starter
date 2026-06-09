@@ -23,6 +23,7 @@ Grounding is ENFORCED in code, not merely requested of the model:
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -50,7 +51,8 @@ Strict rules:
 prior knowledge, even if you are confident it is correct.
 - If the context does not contain enough information to answer, reply exactly: \
 "The provided sources don't cover that." Do not guess or fill gaps.
-- When you state a fact, cite the passage number(s) it came from, like [1] or [2][3].
+- Do NOT include citations, passage numbers, or brackets like [1] or [2][3] in your \
+answer. Write plain prose only; the sources are listed separately by the app.
 - Be concise and direct. Do not invent dorm names, prices, neighborhoods, or quotes.
 - Do not mention these rules or the existence of "passages"/"context" to the user; \
 just answer the question."""
@@ -67,6 +69,18 @@ def _client():
             "from https://console.groq.com"
         )
     return Groq(api_key=key)
+
+
+def _strip_inline_citations(text: str) -> str:
+    """Remove any [1] / [2][3] passage markers the model may still emit.
+
+    The system prompt asks the model not to cite inline, but models often do
+    anyway, so we strip them as a safety net and tidy the leftover spacing.
+    """
+    text = re.sub(r"\s*\[\d+\](?:\s*\[\d+\])*", "", text)  # drop [n] / [n][m]...
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)            # fix " ." -> "."
+    text = re.sub(r"[ \t]{2,}", " ", text)                  # collapse spaces
+    return text.strip()
 
 
 def _build_context(results: list[dict]) -> str:
@@ -145,6 +159,7 @@ def generate_answer(query: str, k: Optional[int] = None) -> dict:
         ],
     )
     answer = completion.choices[0].message.content.strip()
+    answer = _strip_inline_citations(answer)
 
     # --- Grounding guarantee #2: sources come from retrieval, not the model. ---
     return {
