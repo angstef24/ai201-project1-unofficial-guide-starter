@@ -164,44 +164,112 @@ def parse_citation(header: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Chunk cleaning (run AFTER splitting, so structural markers are still usable) #
+# --------------------------------------------------------------------------- #
+# Each chunk is cleaned of low-signal tokens before embedding. Markdown markers
+# and Reddit metadata (usernames, vote counts, reply notes) carry no meaning for
+# a housing query but get embedded anyway, diluting the chunk's vector and
+# lowering its similarity to relevant questions. Stripping them concentrates the
+# embedding on the actual content. Order matters — author/score prefixes are
+# removed before the generic '**' strip so blog labels like '**Home Park:**'
+# (colon inside the bold) survive as 'Home Park:'.
+_CLEAN_RULES = [
+    # Reddit thread structural labels.
+    (re.compile(r"(?m)^\s*#+\s*Original Post\s*$"), ""),
+    (re.compile(r"\*\*Title:\*\*"), ""),
+    (re.compile(r"\*\(Score:[^)]*\)\*"), ""),
+    # Reddit author + score prefix:  **name** (12 upvotes):  /  > **name** (3mo):
+    (re.compile(r"(?m)^\s*>*\s*\*\*[^*:\n]+\*\*\s*(?:\([^)]*\))?\s*:?"), ""),
+    # Reply annotations and "N more replies".
+    (re.compile(r"\[reply under [^\]]*\]"), ""),
+    (re.compile(r"\*?\((?:\d+ more repl(?:y|ies)|edited|\d+,\s*edited)\)\*?"), ""),
+    # The self-promotion / sublease tags added during scraping.
+    (re.compile(r"\((?:repeat )?self-promotion[^)]*\)"), ""),
+    # Markdown markers: headings, blockquotes, emphasis.
+    (re.compile(r"(?m)^\s{0,3}#{1,6}\s+"), ""),
+    (re.compile(r"(?m)^\s*>+\s*"), ""),
+    (re.compile(r"\*\*"), ""),
+    (re.compile(r"(?<!\w)\*(?!\w)"), ""),  # stray emphasis asterisks
+]
+
+
+def _clean(text: str) -> str:
+    """Strip markdown + Reddit metadata noise from a chunk before embedding."""
+    for pattern, repl in _CLEAN_RULES:
+        text = pattern.sub(repl, text)
+    # Tidy whitespace left behind by the removals.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+
+# --------------------------------------------------------------------------- #
 # The two chunking modes                                                      #
 # --------------------------------------------------------------------------- #
+# Split a line into sentences after ., ! or ? (kept attached to the sentence).
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_sentences(text: str) -> List[str]:
+    """Break text into sentences, respecting line breaks (headings, paragraphs).
+
+    Splitting on newlines first keeps markdown headings and label lines (e.g.
+    '**Home Park:** ...') as their own units, then each line is split into
+    sentences. This is intentionally lightweight (no NLTK dependency).
+    """
+    sentences: List[str] = []
+    for line in re.split(r"\n+", text):
+        line = line.strip()
+        if not line:
+            continue
+        for s in _SENT_SPLIT.split(line):
+            s = s.strip()
+            if s:
+                sentences.append(s)
+    return sentences
+
+
 def _chunk_blog(text: str, chunk_size: int, overlap: int) -> List[str]:
-    """Sliding-window token chunks with overlap (for long-form / blog pages)."""
+    """Sentence-aware chunks for long-form / blog pages.
+
+    Packs whole sentences into a chunk until adding the next one would exceed
+    `chunk_size` tokens, so chunks never cut mid-sentence. A trailing sentence
+    (~`overlap` tokens) is carried into the next chunk for continuity, so the
+    overlap is sentence-granular rather than an exact token count. A single
+    sentence longer than chunk_size is kept whole as its own chunk rather than
+    being split.
+    """
     if overlap >= chunk_size:
         raise ValueError("overlap must be smaller than chunk_size")
 
-    step = chunk_size - overlap
-    chunks: List[str] = []
-
-    # Preferred path: chunk by token count but slice the ORIGINAL text via the
-    # tokenizer's char offsets, so the chunk reads exactly like the source.
-    offsets = _TOKENIZER.encode_offsets(text)
-    if offsets is not None:
-        n = len(offsets)
-        if n == 0:
-            return []
-        for start in range(0, n, step):
-            window = offsets[start : start + chunk_size]
-            char_start, char_end = window[0][0], window[-1][1]
-            piece = text[char_start:char_end].strip()
-            if piece:
-                chunks.append(piece)
-            if start + chunk_size >= n:
-                break
-        return chunks
-
-    # Fallback path (no fast tokenizer / offline): encode->slice->decode.
-    tokens = _TOKENIZER.encode(text)
-    if not tokens:
+    # (sentence, token_count) pairs so we can pack and overlap by token budget.
+    pairs = [(s, len(_TOKENIZER.encode(s))) for s in _split_sentences(text)]
+    if not pairs:
         return []
-    for start in range(0, len(tokens), step):
-        window = tokens[start : start + chunk_size]
-        piece = _TOKENIZER.decode(window).strip()
-        if piece:
-            chunks.append(piece)
-        if start + chunk_size >= len(tokens):
-            break  # last window already reached the end
+
+    chunks: List[str] = []
+    current: List[tuple] = []
+    current_tokens = 0
+
+    for sentence, n_tok in pairs:
+        if current and current_tokens + n_tok > chunk_size:
+            chunks.append(" ".join(s for s, _ in current))
+            # Carry the last sentence(s) (~overlap tokens) into the next chunk.
+            tail: List[tuple] = []
+            tail_tokens = 0
+            for s, t in reversed(current):
+                if tail and tail_tokens + t > overlap:
+                    break
+                tail.append((s, t))
+                tail_tokens += t
+            current = list(reversed(tail))
+            current_tokens = tail_tokens
+        current.append((sentence, n_tok))
+        current_tokens += n_tok
+
+    if current:
+        chunks.append(" ".join(s for s, _ in current))
     return chunks
 
 
@@ -329,14 +397,18 @@ def chunk_text(
 
     source_type = source_type.lower()
     if source_type == "reddit":
-        return _chunk_reddit(text)
-    if source_type == "reviews":
-        return _chunk_reviews(text)
-    if source_type == "blog":
-        return _chunk_blog(text, chunk_size, overlap)
-    raise ValueError(
-        f"Unknown source_type: {source_type!r} (use 'blog', 'reddit', or 'reviews')"
-    )
+        raw_chunks = _chunk_reddit(text)
+    elif source_type == "reviews":
+        raw_chunks = _chunk_reviews(text)
+    elif source_type == "blog":
+        raw_chunks = _chunk_blog(text, chunk_size, overlap)
+    else:
+        raise ValueError(
+            f"Unknown source_type: {source_type!r} (use 'blog', 'reddit', or 'reviews')"
+        )
+
+    # Clean each chunk of markdown/metadata noise before it gets embedded.
+    return [c for c in (_clean(chunk) for chunk in raw_chunks) if c]
 
 
 def chunk_corpus(folder: str = "GT Housing Info") -> List[dict]:
